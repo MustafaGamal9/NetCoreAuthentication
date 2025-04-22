@@ -1,11 +1,21 @@
 ﻿using JwtApp.Models;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace JwtApp.Data
 {
-    public class JWTDbContext(DbContextOptions<JWTDbContext> options) : DbContext(options)
+    public class JWTDbContext : IdentityDbContext<User, IdentityRole<Guid>, Guid>
     {
-        public DbSet<User> Users { get; set; }
-    }
+        public JWTDbContext(DbContextOptions<JWTDbContext> options) : base(options) { }
 
+ 
+
+        protected override void OnModelCreating(ModelBuilder builder)
+        {
+            base.OnModelCreating(builder); // IMPORTANT: This needs to be called first
+
+           
+        }
+    }
 }

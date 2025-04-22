@@ -1,13 +1,9 @@
-﻿namespace JwtApp.Models
+﻿using Microsoft.AspNetCore.Identity;
+
+namespace JwtApp.Models
 {
-    public class User
+    public class User : IdentityUser<Guid>
     {
-        public Guid Id { get; set; }
-        public string UserName { get; set; } = string.Empty;
-        public string PasswordHash { get; set; } = string.Empty;
-
-        public string Role { get; set; } = string.Empty;
-
         public string? RefreshToken { get; set; } = string.Empty;
 
         public DateTime? RefreshTokenExpiryTime { get; set; }

@@ -1,67 +1,66 @@
-﻿using JwtApp.DTO;
+﻿
+using JwtApp.DTO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Identity;
-using System.Security.Claims;
-using Microsoft.IdentityModel.Tokens;
-using System.Text;
-using System.IdentityModel.Tokens.Jwt;
 using JwtApp.Services;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace JwtApp.Controllers
 {
-
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController(IAuthService authService) : ControllerBase
+    public class AuthController(IAuthService authService) : ControllerBase // Inject IAuthService
     {
-
-
         [HttpPost("register")]
-        public async Task<ActionResult<TokenResponseDTO>> Register(UserDTO request)
+        public async Task<ActionResult<string>> Register(UserDTO request) 
         {
-            var result = await authService.RegisterAsync(request);
-            if (result is null)
+            var user = await authService.RegisterAsync(request); 
+            if (user is null)
             {
-                return BadRequest("Username already exists");
+                return BadRequest("Username already exists or registration failed.");
             }
-            return Ok(result);
-
+   
+            return Ok($"User '{user.UserName}' registered successfully as Student.");
         }
 
         [HttpPost("login")]
-        public async Task<ActionResult<string>> Login(UserDTO request)
+        public async Task<ActionResult<TokenResponseDTO>> Login(UserDTO request) 
         {
-            var token = await authService.LoginAsync(request);
-            if (token is null)
+            var tokenResponse = await authService.LoginAsync(request);
+            if (tokenResponse is null)
                 return BadRequest("Invalid Username or password");
 
-            return Ok(token);
-
+            return Ok(tokenResponse);
         }
 
-        [HttpPost("Refresh-Token")]
+        [HttpPost("refresh-token")] 
         public async Task<ActionResult<TokenResponseDTO>> RefreshToken(RefreshTokenRequestDTO request)
         {
-            var token = await authService.RefreshTokenAsync(request);
-            if (token is null || token.AccessToken is null || token.RefreshToken is null)
-                return BadRequest("Invalid Token");
-            return Ok(token);
+            var tokenResponse = await authService.RefreshTokenAsync(request);
+            if (tokenResponse is null || string.IsNullOrEmpty(tokenResponse.AccessToken) || string.IsNullOrEmpty(tokenResponse.RefreshToken))
+                return BadRequest("Invalid client request or refresh token expired."); // More specific error
+
+            return Ok(tokenResponse);
         }
 
+  
         [HttpGet]
         [Authorize]
-        public ActionResult<string> Get() // for testing
+        public ActionResult<string> Get()
         {
-            return "Hello im authenticated";
-        }
-        [HttpGet("admin")]
-        [Authorize(Roles = "Admin")]
-        public ActionResult<string> GetAdmin() // for testing
-        {
-            return "Hello im The Admin";
+           
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier); 
+            var userName = User.FindFirstValue(ClaimTypes.Name); 
+            return $"Hello {userName} (ID: {userId}), you are authenticated!";
         }
 
+        [HttpGet("admin")]
+        [Authorize(Roles = "Admin")]
+        public ActionResult<string> GetAdmin()
+        {
+            var userName = User.FindFirstValue(ClaimTypes.Name);
+            return $"Hello Admin '{userName}'!";
+        }
     }
 }

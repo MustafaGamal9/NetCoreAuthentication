@@ -4,77 +4,114 @@ using JwtApp.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using System; 
+using System.Collections.Generic; 
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks; 
 
 namespace JwtApp.Services
 {
-    public class AuthService(JWTDbContext context,IConfiguration configuration) : IAuthService
+    // Inject UserManager and RoleManager
+    public class AuthService(
+        JWTDbContext context, 
+        IConfiguration configuration,
+        UserManager<User> userManager, 
+        RoleManager<IdentityRole<Guid>> roleManager)
+        : IAuthService
     {
         public async Task<TokenResponseDTO?> LoginAsync(UserDTO request)
         {
-            var user = await context.Users.FirstOrDefaultAsync(x => x.UserName == request.UserName); // get user from db
+            // Find user by username
+            var user = await userManager.FindByNameAsync(request.UserName);
 
             if (user is null)
             {
-                return null;
-            }
-            if (new PasswordHasher<User>().VerifyHashedPassword(user, user.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
-            {
-                return null;
+                return null; // User not found
             }
 
+            // Check password using Identity's password hasher
+            var passwordValid = await userManager.CheckPasswordAsync(user, request.Password);
+            if (!passwordValid)
+            {
+                return null; // Invalid password
+            }
+
+            // User found and password is correct, generate tokens
             return await CreateTokenResponse(user);
         }
 
-        private async Task<TokenResponseDTO> CreateTokenResponse(User? user)
+        private async Task<TokenResponseDTO> CreateTokenResponse(User user)
         {
+            var accessToken = await CreateToken(user); // Pass user to CreateToken
+            var refreshToken = await GenerateAndSaveRefreshTokenAsync(user); // Generate and save refresh token
+
             var response = new TokenResponseDTO
             {
-                AccessToken = CreateToken(user), // create access token
-                RefreshToken = await GenerateAndSaveRefreshTokenAsync(user) // create refresh token
+                AccessToken = accessToken,
+                RefreshToken = refreshToken
             };
             return response;
         }
 
         public async Task<User?> RegisterAsync(UserDTO request)
         {
-            if(await context.Users.AnyAsync(x => x.UserName == request.UserName))
+            // Check if user already exists
+            var existingUser = await userManager.FindByNameAsync(request.UserName);
+            if (existingUser != null)
             {
-                return null; // user already exist
+                return null; // Username already exists
             }
-            var user = new User(); // user instance
 
-            var hashedPassword = new PasswordHasher<User>()
-                         .HashPassword(user, request.Password); // hash password that user sends
+            // Create a new User instance
+            var user = new User
+            {
+                Id = Guid.NewGuid(),
+                UserName = request.UserName,
+                SecurityStamp = Guid.NewGuid().ToString()
+            };
 
-            user.UserName = request.UserName; // give username
-            user.PasswordHash = hashedPassword; // give password hash
+  
+            var result = await userManager.CreateAsync(user, request.Password);
 
-            context.Users.Add(user); // adding to db
-            context.SaveChangesAsync();
+            if (!result.Succeeded)
+            {
+       
+                Console.WriteLine($"User creation failed: {string.Join(", ", result.Errors.Select(e => e.Description))}");
+                return null; // Registration failed
+            }
+
+
+            await userManager.AddToRoleAsync(user, "Student");
+
+
             return user;
         }
 
+
         public async Task<TokenResponseDTO?> RefreshTokenAsync(RefreshTokenRequestDTO request)
         {
-            var user = await ValidateRefreshTokenAsync(request.UserID,request.RefreshToken);
+            // Validate the refresh token against the stored one
+            var user = await ValidateRefreshTokenAsync(request.UserID, request.RefreshToken);
             if (user is null)
-                return null;
+                return null; // Invalid user or token
 
-            return await CreateTokenResponse(user); // create new token 
-
+            // Generate new tokens
+            return await CreateTokenResponse(user);
         }
+
         private async Task<User?> ValidateRefreshTokenAsync(Guid userId, string refreshToken)
         {
-            var user = await context.Users.FindAsync(userId);
+            // Use UserManager to find the user by ID
+            var user = await userManager.FindByIdAsync(userId.ToString());
+
             if (user is null || user.RefreshToken != refreshToken || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
             {
-                return null; // invalid token
+                return null; // Invalid user, token mismatch, or token expired
             }
-            return user; // valid token
+            return user; // Valid token
         }
 
 
@@ -88,40 +125,52 @@ namespace JwtApp.Services
             }
         }
 
+  
         private async Task<string> GenerateAndSaveRefreshTokenAsync(User user)
         {
-            var refreshToken = GenerateRefreshToken();  
-            user.RefreshToken = refreshToken; // save refresh token to db
-            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7); // set expiry time
-            await context.SaveChangesAsync();
+            var refreshToken = GenerateRefreshToken();
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7); 
+
+            context.Users.Update(user); 
+            await context.SaveChangesAsync(); 
+
+
             return refreshToken;
         }
 
-        private string CreateToken(User user)
+
+        private async Task<string> CreateToken(User user)
         {
-            var claims = new List<Claim> // claims sent with the token
-            {
-                new Claim(ClaimTypes.Name, user.UserName),
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Role, user.Role)
-            };
+            var roles = await userManager.GetRolesAsync(user);
+
+            var claims = new List<Claim>
+                   {
+                       new Claim(ClaimTypes.Name, user.UserName),
+                       new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                       
+                   };
+            claims.AddRange(roles.Select(role => new Claim(ClaimTypes.Role, role)));
+
             var key = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(configuration.GetValue<string>("AppSettings:Token")!)
             );
 
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
 
-            var tokenDescriptor = new JwtSecurityToken(
-                issuer: configuration.GetValue<string>("AppSettings:Issuer"),
-                audience: configuration.GetValue<string>("AppSettings:Audience"),
-                claims: claims,
-                expires: DateTime.UtcNow.AddDays(1),
-                signingCredentials: creds
-                );
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(claims),
+                Issuer = configuration.GetValue<string>("AppSettings:Issuer"),
+                Audience = configuration.GetValue<string>("AppSettings:Audience"),
+                Expires = DateTime.UtcNow.AddMinutes(15),
+                SigningCredentials = creds
+            };
 
-            return new JwtSecurityTokenHandler().WriteToken(tokenDescriptor);
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+
+            return tokenHandler.WriteToken(token);
         }
-
-
     }
 }
