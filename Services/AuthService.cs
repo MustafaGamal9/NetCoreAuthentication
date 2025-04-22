@@ -22,10 +22,10 @@ namespace JwtApp.Services
         RoleManager<IdentityRole<Guid>> roleManager)
         : IAuthService
     {
-        public async Task<TokenResponseDTO?> LoginAsync(UserDTO request)
+        public async Task<TokenResponseDTO?> LoginAsync(LoginDTO request)
         {
             // Find user by username
-            var user = await userManager.FindByNameAsync(request.UserName);
+            var user = await userManager.FindByEmailAsync(request.Email);
 
             if (user is null)
             {
@@ -56,40 +56,7 @@ namespace JwtApp.Services
             return response;
         }
 
-        public async Task<User?> RegisterAsync(UserDTO request)
-        {
-            // Check if user already exists
-            var existingUser = await userManager.FindByNameAsync(request.UserName);
-            if (existingUser != null)
-            {
-                return null; // Username already exists
-            }
-
-            // Create a new User instance
-            var user = new User
-            {
-                Id = Guid.NewGuid(),
-                UserName = request.UserName,
-                SecurityStamp = Guid.NewGuid().ToString()
-            };
-
-  
-            var result = await userManager.CreateAsync(user, request.Password);
-
-            if (!result.Succeeded)
-            {
-       
-                Console.WriteLine($"User creation failed: {string.Join(", ", result.Errors.Select(e => e.Description))}");
-                return null; // Registration failed
-            }
-
-
-            await userManager.AddToRoleAsync(user, "Student");
-
-
-            return user;
-        }
-
+ 
 
         public async Task<TokenResponseDTO?> RefreshTokenAsync(RefreshTokenRequestDTO request)
         {

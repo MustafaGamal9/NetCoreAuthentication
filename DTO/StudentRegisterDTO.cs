@@ -2,7 +2,7 @@
 
 namespace JwtApp.DTO
 {
-    public class CreateUserDTO
+    public class StudentRegisterDTO
     {
         [Required]
         public string UserName { get; set; } = string.Empty;
@@ -15,9 +15,6 @@ namespace JwtApp.DTO
         public string Password { get; set; } = string.Empty;
 
         [Required]
-        [RegularExpression("^(Admin|Student|Teacher)$", ErrorMessage = "Role must be either 'Admin' or 'Student or Teacher'.")]
-        public string Role { get; set; } = string.Empty; 
-
-
+        public string Level { get; set; } = string.Empty; 
     }
 }

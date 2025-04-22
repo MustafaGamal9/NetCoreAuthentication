@@ -13,9 +13,8 @@ namespace JwtApp.Data
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
-            base.OnModelCreating(builder); // IMPORTANT: This needs to be called first
-
-           
+            base.OnModelCreating(builder);
+  
         }
     }
 }
